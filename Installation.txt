@@ -1,0 +1,7 @@
+dotenv
+mysql2
+bcrypt
+google-auth-library@10.2.1
+multer
+xlsx
+pdfkit
