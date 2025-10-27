@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../../db'); // your mysql2/promise db pool
 const multer = require('multer');
 const path = require('path');
-const verifyToken = require('../../middlewares/verifyToken'); // middleware to verify JWT token
+const verifyToken = require('../../middlewares/verifytoken'); // middleware to verify JWT token
 const bcrypt = require('bcrypt');
 const upload = require('../../middlewares/PhotoUploads');
 /**
