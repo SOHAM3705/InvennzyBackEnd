@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const getTableByRole = (role) => {
-  if (role === "admin") return "Admin";
+  if (role === "admin") return "admin";
   if (role === "labincharge") return "LabIncharge";
   if (role === "labassistant") return "LabAssistant";
   return null;
