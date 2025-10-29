@@ -4,8 +4,8 @@ const jwt = require("jsonwebtoken");
 
 const getTableByRole = (role) => {
   if (role === "admin") return "admin";
-  if (role === "labincharge") return "LabIncharge";
-  if (role === "labassistant") return "LabAssistant";
+  if (role === "labincharge") return "labincharge";
+  if (role === "labassistant") return "labassistant";
   return null;
 };
 
