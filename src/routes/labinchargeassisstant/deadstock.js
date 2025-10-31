@@ -50,7 +50,7 @@ router.get("/fetch/lab/deadstock", async (req, res) => {
         d.subtotal_excl_gst,
         d.gst_amount,
         d.total_incl_gst,
-        s.staff_id,
+        s.id,
         s.name AS staff_name,
         s.lab_id,
         l.lab_name,
