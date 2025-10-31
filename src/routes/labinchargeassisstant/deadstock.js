@@ -57,7 +57,7 @@ router.get("/fetch/lab/deadstock", async (req, res) => {
         l.lab_no,
         l.building
       FROM dead_stock_requirements d
-      JOIN staff s ON d.staff_id = s.staff_id
+      JOIN staff s ON d.staff_id = s.id
       JOIN labs l ON s.lab_id = l.id
       WHERE l.id = ?
       ORDER BY d.date_submitted DESC
