@@ -25,6 +25,61 @@ router.get("/fetch/deadstock", async (req, res) => {
   }
 });
 
+router.get("/fetch/lab/deadstock", async (req, res) => {
+  try {
+    const { labId } = req.query;
+
+    if (!labId) {
+      return res.status(400).json({ error: "labId is required" });
+    }
+
+    const [rows] = await db.query(
+      `
+      SELECT 
+        d.id,
+        d.deadstock_id,
+        d.po_no,
+        d.date_submitted,
+        d.quantity,
+        d.remark,
+        d.equipment_name,
+        d.purchase_year,
+        d.ds_number,
+        d.cost,
+        d.gst_rate,
+        d.subtotal_excl_gst,
+        d.gst_amount,
+        d.total_incl_gst,
+        s.staff_id,
+        s.name AS staff_name,
+        s.lab_id,
+        l.lab_name,
+        l.lab_no,
+        l.building
+      FROM dead_stock_requirements d
+      JOIN staff s ON d.staff_id = s.staff_id
+      JOIN labs l ON s.lab_id = l.id
+      WHERE l.id = ?
+      ORDER BY d.date_submitted DESC
+      `,
+      [labId]
+    );
+
+    // ✅ If no equipment found
+    if (rows.length === 0) {
+      return res.status(200).json({ message: "No equipment found", data: [] });
+    }
+
+    res.status(200).json({ data: rows });
+  } catch (error) {
+    console.error("Error fetching deadstock:", error);
+    res.status(500).json({ error: "Failed to fetch deadstock" });
+  }
+});
+
+
+
+
 
 // ✅ Add a new deadstock record with GST handling
 router.post("/deadstock", async (req, res) => {
@@ -821,7 +876,7 @@ router.get("/downloads/deadstock-full-report", async (req, res) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition", 
-      `attachment; filename=deadstock_full_report_${staffId}_${new Date().toISOString().slice(0, 10)}.pdf`
+      `attachment; filename=deadstock_full_report_${staffId}.pdf`
     );
     doc.pipe(res);
 
