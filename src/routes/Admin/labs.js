@@ -88,8 +88,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// ✅ POST create new lab
-router.post('/', async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const {
       labNo, labName, building, floor, capacity,
@@ -99,147 +98,111 @@ router.post('/', async (req, res) => {
       status, adminId
     } = req.body;
 
-    // Basic validation
     if (!labNo || !labName || !building || !floor || !adminId) {
-      return res.status(400).json({ error: 'Missing required fields' });
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
+    // 1️⃣ Create Lab
     const newLab = await Lab.create({
       labNo, labName, building, floor, capacity,
       monitors, projectors, switchBoards, fans, wifi, others,
       inchargeName, inchargeEmail, inchargePhone,
       assistantName, assistantEmail, assistantPhone,
-      status, adminId
+      status, adminId,
     });
 
-    const labId = newLab.id; // assuming your Lab.create returns the inserted lab with id
-    const LabNo = newLab.labNo;
+    const labId = newLab.id;
 
-  const equipmentInsert = [];
+    // 2️⃣ Generate random passwords
+    const inchargePasswordPlain = crypto.randomBytes(4).toString("hex");
+    const assistantPasswordPlain = crypto.randomBytes(4).toString("hex");
 
-  const createEquipments = (type, count) => {
-  for (let i = 1; i <= count; i++) {
-    equipmentInsert.push([
-      labId,
-      null, // staff_id if needed
-      type,
-      `${type} ${i}`,
-      `${type}-${labId}-${i}`, // unique code
-      '0', // default status working
-      null, // password
-      null,
-      null,
-      labNo
-    ]);
-  }
-};
+    // 3️⃣ Hash passwords
+    const inchargePasswordHash = await bcrypt.hash(inchargePasswordPlain, 10);
+    const assistantPasswordHash = await bcrypt.hash(assistantPasswordPlain, 10);
 
-createEquipments('monitor', monitors);
-createEquipments('projector', projectors);
-createEquipments('switch_board', switchBoards);
-createEquipments('fan', fans);
-createEquipments('wifi', wifi);
-createEquipments('other', others);
-
-if (equipmentInsert.length > 0) {
-  await db.query(
-    `INSERT INTO equipment_details 
-     (lab_id, staff_id, equipment_type, equipment_name, equipment_code, equipment_status, equipment_password, company_name, specification, current_location)
-     VALUES ?`,
-    [equipmentInsert]
-  );
-}
-
-    res.status(201).json(newLab);
-  } catch (error) {
-    console.error('Error creating lab:', error);
-    res.status(500).json({ error: 'Failed to create lab' });
-  }
-});
-
-router.put('/:id', async (req, res) => {
-  const labId = req.params.id;
-  const {
-    labNo, labName, building, floor, capacity,
-    monitors, projectors, switchBoards, fans, wifi, others,
-    inchargeName, inchargeEmail, inchargePhone,
-    assistantName, assistantEmail, assistantPhone,
-    status
-  } = req.body;
-
-  try {
-    // First, update the lab basic details
-    const updated = await Lab.update(labId, {
-      labNo, labName, building, floor, capacity,
-      monitors, projectors, switchBoards, fans, wifi, others,
-      inchargeName, inchargeEmail, inchargePhone,
-      assistantName, assistantEmail, assistantPhone,
-      status
-    });
-
-    if (!updated) {
-      return res.status(404).json({ error: 'Lab not found' });
+    // 4️⃣ Insert into labincharge and labassistant tables
+    if (inchargeName && inchargeEmail) {
+      await db.query(
+        `INSERT INTO labincharge (name, email, phone, password, lab_id, admin_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [inchargeName, inchargeEmail, inchargePhone, inchargePasswordHash, labId, adminId]
+      );
     }
 
-    // Function to sync equipment counts
-    const syncEquipment = async (type, newCount) => {
-      // Get current count from DB
-      const [rows] = await db.query(
-        `SELECT equipment_id FROM equipment_details WHERE lab_id = ? AND equipment_type = ? ORDER BY equipment_id ASC`,
-        [labId, type]
+    if (assistantName && assistantEmail) {
+      await db.query(
+        `INSERT INTO labassistant (name, email, phone, password, lab_id, admin_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [assistantName, assistantEmail, assistantPhone, assistantPasswordHash, labId, adminId]
       );
-      const currentCount = rows.length;
+    }
 
-      if (newCount > currentCount) {
-        // Add missing items
-        const equipmentInsert = [];
-        for (let i = currentCount + 1; i <= newCount; i++) {
-          equipmentInsert.push([
-            labId,
-            null,
-            type,
-            `${type} ${i}`,
-            `${type}-${labId}-${i}`,
-            '0',
-            null,
-            null,
-            null,
-            labNo
-          ]);
-        }
-        await db.query(
-          `INSERT INTO equipment_details 
-           (lab_id, staff_id, equipment_type, equipment_name, equipment_code, equipment_status, equipment_password, company_name, specification, current_location)
-           VALUES ?`,
-          [equipmentInsert]
-        );
-      } else if (newCount < currentCount) {
-        // Delete extra items
-        const idsToDelete = rows.slice(newCount).map(r => r.equipment_id);
-        if (idsToDelete.length > 0) {
-          await db.query(
-            `DELETE FROM equipment_details WHERE equipment_id IN (?)`,
-            [idsToDelete]
-          );
-        }
+    // 5️⃣ Send account creation emails
+    try {
+      if (inchargeEmail) {
+        await sendEmail({
+          to: inchargeEmail,
+          name: inchargeName,
+          plainPassword: inchargePasswordPlain,
+          subject: `Your Invennzy Account (Lab Incharge - ${labName})`,
+        });
+      }
+      if (assistantEmail) {
+        await sendEmail({
+          to: assistantEmail,
+          name: assistantName,
+          plainPassword: assistantPasswordPlain,
+          subject: `Your Invennzy Account (Lab Assistant - ${labName})`,
+        });
+      }
+    } catch (emailError) {
+      console.error("⚠️ Email send error:", emailError.message);
+      // Don't block creation if email fails
+    }
+
+    // 6️⃣ Create equipment (your original logic)
+    const equipmentInsert = [];
+    const createEquipments = (type, count) => {
+      for (let i = 1; i <= count; i++) {
+        equipmentInsert.push([
+          labId,
+          null,
+          type,
+          `${type} ${i}`,
+          `${type}-${labId}-${i}`,
+          "0",
+          null,
+          null,
+          null,
+          labNo,
+        ]);
       }
     };
 
-    // Sync each equipment type
-    await syncEquipment('monitor', monitors);
-    await syncEquipment('projector', projectors);
-    await syncEquipment('switch_board', switchBoards);
-    await syncEquipment('fan', fans);
-    await syncEquipment('wifi', wifi);
-    await syncEquipment('other', others);
+    createEquipments("monitor", monitors);
+    createEquipments("projector", projectors);
+    createEquipments("switch_board", switchBoards);
+    createEquipments("fan", fans);
+    createEquipments("wifi", wifi);
+    createEquipments("other", others);
 
-    // Return updated lab
-    const updatedLab = await Lab.findById(labId);
-    res.status(200).json(updatedLab);
+    if (equipmentInsert.length > 0) {
+      await db.query(
+        `INSERT INTO equipment_details 
+         (lab_id, staff_id, equipment_type, equipment_name, equipment_code, equipment_status, equipment_password, company_name, specification, current_location)
+         VALUES ?`,
+        [equipmentInsert]
+      );
+    }
 
+    res.status(201).json({
+      message: "Lab created successfully with Lab Incharge and Assistant accounts.",
+      lab: newLab,
+    });
   } catch (error) {
-    console.error('Error updating lab:', error);
-    res.status(500).json({ error: 'Failed to update lab' });
+    console.error("❌ Error creating lab:", error);
+    res.status(500).json({ error: "Failed to create lab" });
   }
 });
 
