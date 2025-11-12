@@ -154,6 +154,8 @@ router.post('/', async (req, res) => {
           [inchargeName, inchargeEmail, inchargeHashed, staffId, inchargePhone, 'Lab Department', 'lab_incharge', 1, 1, 1]
         );
 
+        console.log("📧 Attempting to send email to:", inchargeEmail);
+
         await sendEmail({
           to: inchargeEmail,
           name: inchargeName,
