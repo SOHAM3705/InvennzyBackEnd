@@ -96,6 +96,18 @@ const emailContent = (name, email, password) => {
       border-top: 1px solid #2f2f2f;
       margin: 15px 0;
     }
+    .incorbis-brand {
+      font-size: 13px;
+      color: #888888;
+      margin-top: 8px;
+    }
+    .incorbis-link {
+      color: #fa5519;
+      text-decoration: none;
+    }
+    .incorbis-link:hover {
+      text-decoration: underline;
+    }
     a {
       color: #fa5519;
       text-decoration: none;
@@ -116,7 +128,7 @@ const emailContent = (name, email, password) => {
 <body>
   <div class="email-container">
     <div class="header">
-      <img src="https://invennzy.com/logo1.png" alt="Invennzy Logo" class="logo">
+      <img src="https://invennzy.com/logo.png" alt="Invennzy Logo" class="logo">
     </div>
     <div class="content">
       <div class="greeting">Hello ${name},</div>
@@ -155,6 +167,9 @@ const emailContent = (name, email, password) => {
       <p>Best regards,<br>The Invennzy Team</p>
       <div class="divider"></div>
       <p>This is an automated message — please do not reply.</p>
+      <div class="incorbis-brand">
+        An <a href="https://incorbis.com" class="incorbis-link" target="_blank">Incorbis</a> Product
+      </div>
     </div>
   </div>
 </body>

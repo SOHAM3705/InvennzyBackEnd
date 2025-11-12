@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db'); // Add DB connection here
 const Lab = require('../../models/Labs');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+const sendEmail = require('../../utils/emailsender');
 
 // ✅ GET labs by adminId
 router.get('/admin/:adminId', async (req, res) => {
