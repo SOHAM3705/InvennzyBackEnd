@@ -1,5 +1,7 @@
 const db = require('../db');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+const sendEmail = require('../utils/emailsender'); // ✅ add this import
 
 class Lab {
   static async findByAdminId(adminId) {
@@ -48,6 +50,7 @@ class Lab {
     return rows[0];
   }
 
+  // ✅ UPDATED create() with account creation + email sending
   static async create(labData) {
     const conn = await db.getConnection();
     try {
@@ -100,34 +103,64 @@ class Lab {
 
       const staffId = staffResult.insertId;
 
-      // ✅ Hash default password
-      const hashedPassword = await bcrypt.hash("defaultpassword", 10);
+      // ✅ Generate random passwords instead of default
+      const inchargePlainPassword = crypto.randomBytes(4).toString('hex');
+      const assistantPlainPassword = crypto.randomBytes(4).toString('hex');
 
-      // ✅ Insert into labincharges
+      // ✅ Hash passwords
+      const inchargeHashed = await bcrypt.hash(inchargePlainPassword, 10);
+      const assistantHashed = await bcrypt.hash(assistantPlainPassword, 10);
+
+      // ✅ Insert into labincharge
       await conn.query(`
-        INSERT INTO labincharge (staff_id, name, email, password, google_id, profile_picture)
-        VALUES (?, ?, ?, ?, NULL, NULL)
+        INSERT INTO labincharge (staff_id, name, email, password, google_id, profile_picture, role, notify_email, notify_push, notify_sms, created_at, updated_at)
+        VALUES (?, ?, ?, ?, NULL, NULL, ?, 1, 1, 1, NOW(), NOW())
         ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password)
       `, [
         staffId,
         labData.inchargeName,
         labData.inchargeEmail,
-        hashedPassword
+        inchargeHashed,
+        'lab_incharge'
       ]);
 
-      // ✅ Insert into labassistants
+      // ✅ Insert into labassistant
       await conn.query(`
-        INSERT INTO labassistant (staff_id, name, email, password, google_id, profile_picture)
-        VALUES (?, ?, ?, ?, NULL, NULL)
+        INSERT INTO labassistant (staff_id, name, email, password, google_id, profile_picture, role, notify_email, notify_push, notify_sms, created_at, updated_at)
+        VALUES (?, ?, ?, ?, NULL, NULL, ?, 1, 1, 1, NOW(), NOW())
         ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password)
       `, [
         staffId,
         labData.assistantName,
         labData.assistantEmail,
-        hashedPassword
+        assistantHashed,
+        'lab_assistant'
       ]);
 
       await conn.commit();
+
+      // ✅ Send emails (after transaction is committed)
+      try {
+        if (labData.inchargeEmail) {
+          await sendEmail({
+            to: labData.inchargeEmail,
+            name: labData.inchargeName,
+            plainPassword: inchargePlainPassword,
+            subject: `Your Invennzy Account (Lab Incharge - ${labData.labName})`
+          });
+        }
+        if (labData.assistantEmail) {
+          await sendEmail({
+            to: labData.assistantEmail,
+            name: labData.assistantName,
+            plainPassword: assistantPlainPassword,
+            subject: `Your Invennzy Account (Lab Assistant - ${labData.labName})`
+          });
+        }
+        console.log("✅ Account creation emails sent successfully!");
+      } catch (emailErr) {
+        console.error("⚠️ Email sending failed:", emailErr.response?.data || emailErr.message);
+      }
 
       // ✅ Return full lab with joins
       const fullLab = await Lab.findById(labId);
@@ -135,6 +168,7 @@ class Lab {
 
     } catch (err) {
       await conn.rollback();
+      console.error("❌ Transaction failed:", err.message);
       throw err;
     } finally {
       conn.release();

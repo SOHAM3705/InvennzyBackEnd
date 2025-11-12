@@ -2,9 +2,6 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db'); // Add DB connection here
 const Lab = require('../../models/Labs');
-const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
-const sendEmail = require('../../utils/emailsender');
 
 // ✅ GET labs by adminId
 router.get('/admin/:adminId', async (req, res) => {
@@ -91,6 +88,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// ✅ POST create new lab
 router.post('/', async (req, res) => {
   try {
     const {
@@ -106,7 +104,6 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // ✅ Step 1: Create Lab entry
     const newLab = await Lab.create({
       labNo, labName, building, floor, capacity,
       monitors, projectors, switchBoards, fans, wifi, others,
@@ -115,124 +112,50 @@ router.post('/', async (req, res) => {
       status, adminId
     });
 
-    const labId = newLab.id;
+    const labId = newLab.id; // assuming your Lab.create returns the inserted lab with id
     const LabNo = newLab.labNo;
 
-    // ✅ Step 2: Create Staff record (1 per lab)
-    let staffId;
-    try {
-      const [staffResult] = await db.query(
-        `INSERT INTO staff 
-         (lab_id, incharge_name, incharge_email, incharge_phone, assistant_name, assistant_email, assistant_phone)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [labId, inchargeName, inchargeEmail, inchargePhone, assistantName, assistantEmail, assistantPhone]
-      );
+  const equipmentInsert = [];
 
-      staffId = staffResult.insertId;
-      
-    } catch (staffError) {
-      
-      return res.status(500).json({ error: 'Failed to create staff record' });
-    }
+  const createEquipments = (type, count) => {
+  for (let i = 1; i <= count; i++) {
+    equipmentInsert.push([
+      labId,
+      null, // staff_id if needed
+      type,
+      `${type} ${i}`,
+      `${type}-${labId}-${i}`, // unique code
+      '0', // default status working
+      null, // password
+      null,
+      null,
+      labNo
+    ]);
+  }
+};
 
-    // ✅ Step 3: Create user accounts in labincharge & labassistant tables
-    try {
-      // Generate random passwords
-      const inchargePlainPassword = crypto.randomBytes(4).toString('hex');
-      const assistantPlainPassword = crypto.randomBytes(4).toString('hex');
+createEquipments('monitor', monitors);
+createEquipments('projector', projectors);
+createEquipments('switch_board', switchBoards);
+createEquipments('fan', fans);
+createEquipments('wifi', wifi);
+createEquipments('other', others);
 
-      // Hash passwords
-      const inchargeHashed = await bcrypt.hash(inchargePlainPassword, 10);
-      const assistantHashed = await bcrypt.hash(assistantPlainPassword, 10);
+if (equipmentInsert.length > 0) {
+  await db.query(
+    `INSERT INTO equipment_details 
+     (lab_id, staff_id, equipment_type, equipment_name, equipment_code, equipment_status, equipment_password, company_name, specification, current_location)
+     VALUES ?`,
+    [equipmentInsert]
+  );
+}
 
-      // Insert Lab Incharge account
-      if (inchargeEmail && inchargeName) {
-        await db.query(
-          `INSERT INTO labincharge 
-           (name, email, password, staff_id, phone, department, role, notify_email, notify_push, notify_sms, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-          [inchargeName, inchargeEmail, inchargeHashed, staffId, inchargePhone, 'Lab Department', 'lab_incharge', 1, 1, 1]
-        );
-
-        console.log("📧 Attempting to send email to:", inchargeEmail);
-
-        await sendEmail({
-          to: inchargeEmail,
-          name: inchargeName,
-          plainPassword: inchargePlainPassword,
-          subject: `Your Invennzy Account (Lab Incharge - ${labName})`,
-        });
-      }
-
-      // Insert Lab Assistant account
-      if (assistantEmail && assistantName) {
-        await db.query(
-          `INSERT INTO labassistant 
-           (name, email, password, staff_id, phone, department, role, notify_email, notify_push, notify_sms, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-          [assistantName, assistantEmail, assistantHashed, staffId, assistantPhone, 'Lab Department', 'lab_assistant', 1, 1, 1]
-        );
-
-        await sendEmail({
-          to: assistantEmail,
-          name: assistantName,
-          plainPassword: assistantPlainPassword,
-          subject: `Your Invennzy Account (Lab Assistant - ${labName})`,
-        });
-      }
-
-      
-    } catch (accountError) {
-      
-    }
-
-    // ✅ Step 4: Equipment Insertion Logic (unchanged)
-    const equipmentInsert = [];
-
-    const createEquipments = (type, count) => {
-      for (let i = 1; i <= count; i++) {
-        equipmentInsert.push([
-          labId,
-          null, // staff_id if needed later
-          type,
-          `${type} ${i}`,
-          `${type}-${labId}-${i}`,
-          '0', // default status working
-          null,
-          null,
-          null,
-          labNo
-        ]);
-      }
-    };
-
-    createEquipments('monitor', monitors);
-    createEquipments('projector', projectors);
-    createEquipments('switch_board', switchBoards);
-    createEquipments('fan', fans);
-    createEquipments('wifi', wifi);
-    createEquipments('other', others);
-
-    if (equipmentInsert.length > 0) {
-      await db.query(
-        `INSERT INTO equipment_details 
-         (lab_id, staff_id, equipment_type, equipment_name, equipment_code, equipment_status, equipment_password, company_name, specification, current_location)
-         VALUES ?`,
-        [equipmentInsert]
-      );
-    }
-
-    // ✅ Step 5: Send final response
-    res.status(201).json({
-      message: 'Lab created successfully with linked staff and accounts.',
-      lab: newLab
-    });
+    res.status(201).json(newLab);
   } catch (error) {
-    console.error('❌ Error creating lab:', error);
+    console.error('Error creating lab:', error);
     res.status(500).json({ error: 'Failed to create lab' });
   }
 });
-
 
 router.put('/:id', async (req, res) => {
   const labId = req.params.id;
