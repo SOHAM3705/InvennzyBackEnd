@@ -1,7 +1,7 @@
 const db = require('../db');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
-const sendEmail = require('../utils/emailsender'); // ✅ add this import
+const sendEmail = require('../utils/AccountCreation/emailsender'); // ✅ add this import
 
 class Lab {
   static async findByAdminId(adminId) {

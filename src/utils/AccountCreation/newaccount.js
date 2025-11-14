@@ -343,7 +343,7 @@ const emailContent = (name, email, password) => {
         </div>
 
         <div class="login-button-container">
-          <a href="https://invennzy.com/login" class="login-button">Login to Your Account</a>
+          <a href="https://invennzy.com" class="login-button">Login to Your Account</a>
         </div>
 
         <div class="security-notice">
