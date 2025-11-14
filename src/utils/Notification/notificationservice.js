@@ -1,5 +1,5 @@
 const db = require("../../db");
-const { sendNotificationMail } = require("../utils/notifier");
+const { sendNotificationMail } = require("./notifier");
 
 const NotificationService = {
   async handleNotification(notificationId) {
