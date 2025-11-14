@@ -180,136 +180,186 @@ static async update(id, labData) {
   try {
     await conn.beginTransaction();
 
-    // ---------------------------
-    // GET OLD staff RECORD FIRST
-    // ---------------------------
+    // --------------------------------------
+    // 1️⃣ Fetch Old Staff Data for Fallbacks
+    // --------------------------------------
     const [[oldStaff]] = await conn.query(
       `SELECT * FROM staff WHERE lab_id = ?`,
       [id]
     );
 
-    if (!oldStaff) {
-      throw new Error("Staff record not found for this lab.");
-    }
+    if (!oldStaff) throw new Error("Staff record not found for this lab.");
 
-    // ---------------------------
-    // CALCULATE SAFE VALUES (fallbacks)
-    // ---------------------------
-    const newInchargeName = labData.inchargeName || oldStaff.incharge_name;
-    const newInchargeEmail = labData.inchargeEmail || oldStaff.incharge_email;
-    const newInchargePhone = labData.inchargePhone || oldStaff.incharge_phone;
+    // Fallback values — do NOT allow blanks/undefined
+    const safe = (value, fallback) =>
+      value && value.trim() !== "" ? value : fallback;
 
-    const newAssistantName = labData.assistantName || oldStaff.assistant_name;
-    const newAssistantEmail = labData.assistantEmail || oldStaff.assistant_email;
-    const newAssistantPhone = labData.assistantPhone || oldStaff.assistant_phone;
+    const newIncharge = {
+      name: safe(labData.inchargeName, oldStaff.incharge_name),
+      email: safe(labData.inchargeEmail, oldStaff.incharge_email),
+      phone: safe(labData.inchargePhone, oldStaff.incharge_phone),
+    };
 
-    // ---------------------------
-    // UPDATE labs
-    // ---------------------------
-    await conn.query(`
+    const newAssistant = {
+      name: safe(labData.assistantName, oldStaff.assistant_name),
+      email: safe(labData.assistantEmail, oldStaff.assistant_email),
+      phone: safe(labData.assistantPhone, oldStaff.assistant_phone),
+    };
+
+    // -------------------------------
+    // 2️⃣ Update labs (unchanged)
+    // -------------------------------
+    await conn.query(
+      `
       UPDATE labs 
       SET lab_no = ?, lab_name = ?, building = ?, floor = ?, 
           capacity = ?, status = ?, last_updated = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [
-      labData.labNo,
-      labData.labName,
-      labData.building,
-      labData.floor,
-      labData.capacity,
-      labData.status,
-      id
-    ]);
+    `,
+      [
+        labData.labNo,
+        labData.labName,
+        labData.building,
+        labData.floor,
+        labData.capacity,
+        labData.status,
+        id,
+      ]
+    );
 
-    // ---------------------------
-    // UPDATE equipment
-    // ---------------------------
-    await conn.query(`
+    // -------------------------------
+    // 3️⃣ Update equipment (unchanged)
+    // -------------------------------
+    await conn.query(
+      `
       UPDATE equipment 
       SET monitors = ?, projectors = ?, switch_boards = ?, fans = ?, wifi = ?, others = ?
       WHERE lab_id = ?
-    `, [
-      labData.monitors,
-      labData.projectors,
-      labData.switchBoards,
-      labData.fans,
-      labData.wifi,
-      labData.others,
-      id
-    ]);
+    `,
+      [
+        labData.monitors,
+        labData.projectors,
+        labData.switchBoards,
+        labData.fans,
+        labData.wifi,
+        labData.others,
+        id,
+      ]
+    );
 
-    // ---------------------------
-    // UPDATE staff with safe values
-    // ---------------------------
-    await conn.query(`
+    // -------------------------------
+    // 4️⃣ Update staff table
+    // -------------------------------
+    await conn.query(
+      `
       UPDATE staff 
       SET incharge_name = ?, incharge_email = ?, incharge_phone = ?,
           assistant_name = ?, assistant_email = ?, assistant_phone = ?
       WHERE lab_id = ?
-    `, [
-      newInchargeName,
-      newInchargeEmail,
-      newInchargePhone,
-      newAssistantName,
-      newAssistantEmail,
-      newAssistantPhone,
-      id
-    ]);
+    `,
+      [
+        newIncharge.name,
+        newIncharge.email,
+        newIncharge.phone,
+        newAssistant.name,
+        newAssistant.email,
+        newAssistant.phone,
+        id,
+      ]
+    );
 
-    // ---------------------------
-    // GET staff_id
-    // ---------------------------
+    // -------------------------------
+    // 5️⃣ Get staff_id (foreign key)
+    // -------------------------------
     const staffId = oldStaff.id;
 
-    // ---------------------------
-    // GET OLD labincharge & assistant emails
-    // ---------------------------
-    const [[oldInchargeAcc]] = await conn.query(
-      `SELECT email FROM labincharge WHERE staff_id = ?`,
-      [staffId]
-    );
+    // -------------------------------------------
+    // 6️⃣ Helper: Process Incharge/Assistant roles
+    // -------------------------------------------
+    const processAccountUpdate = async ({
+      table,
+      oldEmailQuery,
+      newData,
+      roleName,
+    }) => {
+      const [[oldAcc]] = await conn.query(oldEmailQuery, [staffId]);
+      const emailChanged = oldAcc && oldAcc.email !== newData.email;
 
-    const [[oldAssistantAcc]] = await conn.query(
-      `SELECT email FROM labassistant WHERE staff_id = ?`,
-      [staffId]
-    );
+      let hashedPassword = null;
+      let plainPassword = null;
 
-    const inchargeEmailChanged = oldInchargeAcc && oldInchargeAcc.email !== newInchargeEmail;
-    const assistantEmailChanged = oldAssistantAcc && oldAssistantAcc.email !== newAssistantEmail;
+      if (emailChanged) {
+        plainPassword = crypto.randomBytes(4).toString("hex");
+        hashedPassword = await bcrypt.hash(plainPassword, 10);
+      }
 
-    // ---------------------------
-    // UPDATE labincharge
-    // ---------------------------
-    await conn.query(`
-      UPDATE labincharge
-      SET name = ?, email = ?, phone = ?, 
-          google_id = ${inchargeEmailChanged ? "NULL" : "google_id"}
-      WHERE staff_id = ?
-    `, [
-      newInchargeName,
-      newInchargeEmail,
-      newInchargePhone,
-      staffId
-    ]);
+      // 🔥 Build dynamic SQL for google_id & password
+      const updateQuery = `
+        UPDATE ${table}
+        SET name = ?, email = ?, phone = ?,
+            password = ${emailChanged ? "?" : "password"},
+            google_id = ${emailChanged ? "NULL" : "google_id"}
+        WHERE staff_id = ?
+      `;
 
-    // ---------------------------
-    // UPDATE labassistant
-    // ---------------------------
-    await conn.query(`
-      UPDATE labassistant
-      SET name = ?, email = ?, phone = ?, 
-          google_id = ${assistantEmailChanged ? "NULL" : "google_id"}
-      WHERE staff_id = ?
-    `, [
-      newAssistantName,
-      newAssistantEmail,
-      newAssistantPhone,
-      staffId
-    ]);
+      const queryParams = emailChanged
+        ? [newData.name, newData.email, newData.phone, hashedPassword, staffId]
+        : [newData.name, newData.email, newData.phone, staffId];
 
+      await conn.query(updateQuery, queryParams);
+
+      return {
+        emailChanged,
+        plainPassword,
+        name: newData.name,
+        email: newData.email,
+        roleName,
+      };
+    };
+
+    // Process Incharge Update
+    const inchargeResult = await processAccountUpdate({
+      table: "labincharge",
+      oldEmailQuery: "SELECT email FROM labincharge WHERE staff_id = ?",
+      newData: newIncharge,
+      roleName: "Lab Incharge",
+    });
+
+    // Process Assistant Update
+    const assistantResult = await processAccountUpdate({
+      table: "labassistant",
+      oldEmailQuery: "SELECT email FROM labassistant WHERE staff_id = ?",
+      newData: newAssistant,
+      roleName: "Lab Assistant",
+    });
+
+    // -------------------------------
+    // 7️⃣ Commit DB transaction
+    // -------------------------------
     await conn.commit();
-    return true;
 
+    // -------------------------------
+    // 8️⃣ Send Emails (AFTER COMMIT)
+    // -------------------------------
+    const sendEmailIfChanged = async (result) => {
+      if (result.emailChanged) {
+        await sendEmail({
+          to: result.email,
+          name: result.name,
+          plainPassword: result.plainPassword,
+          subject: `Your Updated Invennzy Account (${result.roleName} - ${labData.labName})`,
+        });
+      }
+    };
+
+    try {
+      await sendEmailIfChanged(inchargeResult);
+      await sendEmailIfChanged(assistantResult);
+    } catch (err) {
+      console.error("⚠ Email sending failed:", err.message);
+    }
+
+    return true;
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -317,6 +367,7 @@ static async update(id, labData) {
     conn.release();
   }
 }
+
 
 
 
