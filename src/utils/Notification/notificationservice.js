@@ -15,7 +15,7 @@ const NotificationService = {
         return;
       }
 
-      const { user_role, staff_id, title, message } = notification;
+      const { user_role, staffid, title, message } = notification;
 
       // 2️⃣ Determine which table to fetch email from
       let table = "";
@@ -35,12 +35,12 @@ const NotificationService = {
       const [[receiver]] = await db.query(
         `SELECT name, email, notify_email 
          FROM ${table} 
-         WHERE staff_id = ?`,
-        [staff_id]
+         WHERE staffid = ?`,
+        [staffid]
       );
 
       if (!receiver) {
-        console.log(`❌ No receiver found in table ${table} for staff_id:`, staff_id);
+        console.log(`❌ No receiver found in table ${table} for staffid:`, staffid);
         return;
       }
 
