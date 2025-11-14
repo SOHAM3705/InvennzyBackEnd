@@ -1,19 +1,19 @@
 const axios = require("axios");
-const notificationEmail = require("./notificationEmail");
+const emailContent = require("./newaccount");
 
-const sendNotificationMail = async ({ to, subject, title, message }) => {
+const sendEmail = async ({ to, name, plainPassword, subject }) => {
   try {
     if (!process.env.RESEND_API_KEY) {
       throw new Error("RESEND_API_KEY is not set in .env file");
     }
 
-    await axios.post(
+    const response = await axios.post(
       "https://api.resend.com/emails",
       {
-        from: "notification@invennzy.com",
+        from: "support@invennzy.com",
         to,
-        subject: subject || "Invennzy Notification",
-        html: notificationEmail(title, message),
+        subject: subject || "Welcome to Invennzy",
+        html: emailContent(name, to, plainPassword),
       },
       {
         headers: {
@@ -23,13 +23,9 @@ const sendNotificationMail = async ({ to, subject, title, message }) => {
       }
     );
 
-    console.log(`📩 Notification email sent to ${to}`);
   } catch (error) {
-    console.error(
-      "❌ Failed to send notification email:",
-      error.response?.data || error.message
-    );
+    console.error("❌ Failed to send email:", error.response?.data || error.message);
   }
 };
 
-module.exports = { sendNotificationMail };
+module.exports = sendEmail;
