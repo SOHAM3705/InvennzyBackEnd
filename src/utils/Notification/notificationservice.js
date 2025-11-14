@@ -4,58 +4,76 @@ const { sendNotificationMail } = require("./notifier");
 const NotificationService = {
   async handleNotification(notificationId) {
     try {
-      // 1️⃣ Fetch notification record
+      // 1️⃣ Fetch notification
       const [[notification]] = await db.query(
         `SELECT * FROM notifications WHERE id = ?`,
         [notificationId]
       );
 
-      if (!notification) {
-        console.log("❌ Notification not found:", notificationId);
-        return;
-      }
+      if (!notification) return console.log("❌ Notification not found");
 
       const { user_role, staffid, title, message } = notification;
+      let receiver = null;
 
-      // 2️⃣ Determine which table to fetch email from
-      let table = "";
-
-      if (user_role === "labincharge") {
-        table = "labincharge";
-      } else if (user_role === "labassistant") {
-        table = "labassistant";
-      } else if (user_role === "admin") {
-        table = "admin"; // You must have admin table with notify_email
-      } else {
-        console.log("⚠ Unknown role, skipping email.");
-        return;
+      // ==========================================
+      // LAB INCHARGE / LAB ASSISTANT
+      // ==========================================
+      if (user_role === "labincharge" || user_role === "labassistant") {
+        const [[result]] = await db.query(
+          `SELECT name, email, notify_email
+           FROM ${user_role}
+           WHERE staff_id = ?`,
+          [staffid]
+        );
+        receiver = result;
       }
 
-      // 3️⃣ Fetch recipient data using staff_id
-      const [[receiver]] = await db.query(
-        `SELECT name, email, notify_email 
-         FROM ${table} 
-         WHERE staffid = ?`,
-        [staffid]
-      );
+      // ==========================================
+      // ADMIN
+      // ==========================================
+      else if (user_role === "admin") {
+        // Find staff → lab_id
+        const [[staffRow]] = await db.query(
+          `SELECT lab_id FROM staff WHERE staff_id = ?`,
+          [staffid]
+        );
+        if (!staffRow) return console.log("❌ Staff row not found");
 
-      if (!receiver) {
-        console.log(`❌ No receiver found in table ${table} for staffid:`, staffid);
-        return;
+        // Get admin_id from lab
+        const [[labRow]] = await db.query(
+          `SELECT admin_id FROM lab WHERE lab_id = ?`,
+          [staffRow.lab_id]
+        );
+        if (!labRow) return console.log("❌ Lab row not found");
+
+        // Get admin email + notify_email
+        const [[adminRow]] = await db.query(
+          `SELECT name, email, notify_email
+           FROM admin 
+           WHERE admin_id = ?`,
+          [labRow.admin_id]
+        );
+        receiver = adminRow;
       }
 
-      // 4️⃣ Check user notification preferences (notify_email)
+      // ==========================================
+      // VALIDATION
+      // ==========================================
+      if (!receiver) return console.log("❌ Receiver not found");
+
+      // 🛑 STOP if notify_email is OFF
       if (receiver.notify_email !== 1) {
-        console.log(`📭 Email disabled for ${receiver.email}, NOT sending notification mail.`);
-        return;
+        return console.log(`📭 Email disabled for ${receiver.email}`);
       }
 
-      // 5️⃣ Send email using Resend
+      // ==========================================
+      // SEND EMAIL
+      // ==========================================
       await sendNotificationMail({
         to: receiver.email,
         subject: `Invennzy Notification - ${title}`,
         title,
-        message,
+        message
       });
 
       console.log(`📩 Notification Email Sent → ${receiver.email}`);
