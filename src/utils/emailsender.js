@@ -23,7 +23,6 @@ const sendEmail = async ({ to, name, plainPassword, subject }) => {
       }
     );
 
-    console.log("✅ Email sent successfully:", response.data);
   } catch (error) {
     console.error("❌ Failed to send email:", error.response?.data || error.message);
   }

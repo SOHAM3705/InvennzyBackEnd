@@ -175,64 +175,138 @@ class Lab {
     }
   }
 
-  static async update(id, labData) {
-    const conn = await db.getConnection();
-    try {
-      await conn.beginTransaction();
+static async update(id, labData) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
 
-      await conn.query(`
-        UPDATE labs 
-        SET lab_no = ?, lab_name = ?, building = ?, floor = ?, 
-            capacity = ?, status = ?, last_updated = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `, [
-        labData.labNo,
-        labData.labName,
-        labData.building,
-        labData.floor,
-        labData.capacity,
-        labData.status,
-        id
-      ]);
+    // ---------------------------
+    // UPDATE labs
+    // ---------------------------
+    await conn.query(`
+      UPDATE labs 
+      SET lab_no = ?, lab_name = ?, building = ?, floor = ?, 
+          capacity = ?, status = ?, last_updated = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [
+      labData.labNo,
+      labData.labName,
+      labData.building,
+      labData.floor,
+      labData.capacity,
+      labData.status,
+      id
+    ]);
 
-      await conn.query(`
-        UPDATE equipment 
-        SET monitors = ?, projectors = ?, switch_boards = ?, fans = ?, wifi = ?, others = ?
-        WHERE lab_id = ?
-      `, [
-        labData.monitors,
-        labData.projectors,
-        labData.switchBoards,
-        labData.fans,
-        labData.wifi,
-        labData.others,
-        id
-      ]);
+    // ---------------------------
+    // UPDATE equipment
+    // ---------------------------
+    await conn.query(`
+      UPDATE equipment 
+      SET monitors = ?, projectors = ?, switch_boards = ?, fans = ?, wifi = ?, others = ?
+      WHERE lab_id = ?
+    `, [
+      labData.monitors,
+      labData.projectors,
+      labData.switchBoards,
+      labData.fans,
+      labData.wifi,
+      labData.others,
+      id
+    ]);
 
-      await conn.query(`
-        UPDATE staff 
-        SET incharge_name = ?, incharge_email = ?, incharge_phone = ?,
-            assistant_name = ?, assistant_email = ?, assistant_phone = ?
-        WHERE lab_id = ?
-      `, [
-        labData.inchargeName,
-        labData.inchargeEmail,
-        labData.inchargePhone,
-        labData.assistantName,
-        labData.assistantEmail,
-        labData.assistantPhone,
-        id
-      ]);
+    // ---------------------------
+    // UPDATE staff table (names, phones, emails)
+    // ---------------------------
+    await conn.query(`
+      UPDATE staff 
+      SET incharge_name = ?, incharge_email = ?, incharge_phone = ?,
+          assistant_name = ?, assistant_email = ?, assistant_phone = ?
+      WHERE lab_id = ?
+    `, [
+      labData.inchargeName,
+      labData.inchargeEmail,
+      labData.inchargePhone,
+      labData.assistantName,
+      labData.assistantEmail,
+      labData.assistantPhone,
+      id
+    ]);
 
-      await conn.commit();
-      return true;
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
+    // ---------------------------
+    // FIND staff_id
+    // ---------------------------
+    const [staffRows] = await conn.query(
+      `SELECT id FROM staff WHERE lab_id = ?`,
+      [id]
+    );
+
+    if (staffRows.length === 0) {
+      throw new Error("No staff entry found for this lab.");
     }
+
+    const staffId = staffRows[0].id;
+
+    // --------------------------------------------------
+    // FETCH OLD EMAILS FROM labincharge & labassistant
+    // --------------------------------------------------
+    const [[oldIncharge]] = await conn.query(
+      `SELECT email, google_id FROM labincharge WHERE staff_id = ?`,
+      [staffId]
+    );
+
+    const [[oldAssistant]] = await conn.query(
+      `SELECT email, google_id FROM labassistant WHERE staff_id = ?`,
+      [staffId]
+    );
+
+    // --------------------------------------------------
+    // CHECK EMAIL CHANGE LOGIC
+    // --------------------------------------------------
+    const inchargeEmailChanged = oldIncharge && oldIncharge.email !== labData.inchargeEmail;
+    const assistantEmailChanged = oldAssistant && oldAssistant.email !== labData.assistantEmail;
+
+    // ---------------------------
+    // UPDATE labincharge
+    // ---------------------------
+    await conn.query(`
+      UPDATE labincharge
+      SET name = ?, email = ?, phone = ?, 
+          google_id = ${inchargeEmailChanged ? "NULL" : "google_id"}
+      WHERE staff_id = ?
+    `, [
+      labData.inchargeName,
+      labData.inchargeEmail,
+      labData.inchargePhone,
+      staffId
+    ]);
+
+    // ---------------------------
+    // UPDATE labassistant
+    // ---------------------------
+    await conn.query(`
+      UPDATE labassistant
+      SET name = ?, email = ?, phone = ?, 
+          google_id = ${assistantEmailChanged ? "NULL" : "google_id"}
+      WHERE staff_id = ?
+    `, [
+      labData.assistantName,
+      labData.assistantEmail,
+      labData.assistantPhone,
+      staffId
+    ]);
+
+    await conn.commit();
+    return true;
+
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
   }
+}
+
 
   static async delete(id) {
     const conn = await db.getConnection();
