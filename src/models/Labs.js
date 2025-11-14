@@ -181,6 +181,29 @@ static async update(id, labData) {
     await conn.beginTransaction();
 
     // ---------------------------
+    // GET OLD staff RECORD FIRST
+    // ---------------------------
+    const [[oldStaff]] = await conn.query(
+      `SELECT * FROM staff WHERE lab_id = ?`,
+      [id]
+    );
+
+    if (!oldStaff) {
+      throw new Error("Staff record not found for this lab.");
+    }
+
+    // ---------------------------
+    // CALCULATE SAFE VALUES (fallbacks)
+    // ---------------------------
+    const newInchargeName = labData.inchargeName || oldStaff.incharge_name;
+    const newInchargeEmail = labData.inchargeEmail || oldStaff.incharge_email;
+    const newInchargePhone = labData.inchargePhone || oldStaff.incharge_phone;
+
+    const newAssistantName = labData.assistantName || oldStaff.assistant_name;
+    const newAssistantEmail = labData.assistantEmail || oldStaff.assistant_email;
+    const newAssistantPhone = labData.assistantPhone || oldStaff.assistant_phone;
+
+    // ---------------------------
     // UPDATE labs
     // ---------------------------
     await conn.query(`
@@ -216,7 +239,7 @@ static async update(id, labData) {
     ]);
 
     // ---------------------------
-    // UPDATE staff table (names, phones, emails)
+    // UPDATE staff with safe values
     // ---------------------------
     await conn.query(`
       UPDATE staff 
@@ -224,47 +247,35 @@ static async update(id, labData) {
           assistant_name = ?, assistant_email = ?, assistant_phone = ?
       WHERE lab_id = ?
     `, [
-      labData.inchargeName,
-      labData.inchargeEmail,
-      labData.inchargePhone,
-      labData.assistantName,
-      labData.assistantEmail,
-      labData.assistantPhone,
+      newInchargeName,
+      newInchargeEmail,
+      newInchargePhone,
+      newAssistantName,
+      newAssistantEmail,
+      newAssistantPhone,
       id
     ]);
 
     // ---------------------------
-    // FIND staff_id
+    // GET staff_id
     // ---------------------------
-    const [staffRows] = await conn.query(
-      `SELECT id FROM staff WHERE lab_id = ?`,
-      [id]
-    );
+    const staffId = oldStaff.id;
 
-    if (staffRows.length === 0) {
-      throw new Error("No staff entry found for this lab.");
-    }
-
-    const staffId = staffRows[0].id;
-
-    // --------------------------------------------------
-    // FETCH OLD EMAILS FROM labincharge & labassistant
-    // --------------------------------------------------
-    const [[oldIncharge]] = await conn.query(
-      `SELECT email, google_id FROM labincharge WHERE staff_id = ?`,
+    // ---------------------------
+    // GET OLD labincharge & assistant emails
+    // ---------------------------
+    const [[oldInchargeAcc]] = await conn.query(
+      `SELECT email FROM labincharge WHERE staff_id = ?`,
       [staffId]
     );
 
-    const [[oldAssistant]] = await conn.query(
-      `SELECT email, google_id FROM labassistant WHERE staff_id = ?`,
+    const [[oldAssistantAcc]] = await conn.query(
+      `SELECT email FROM labassistant WHERE staff_id = ?`,
       [staffId]
     );
 
-    // --------------------------------------------------
-    // CHECK EMAIL CHANGE LOGIC
-    // --------------------------------------------------
-    const inchargeEmailChanged = oldIncharge && oldIncharge.email !== labData.inchargeEmail;
-    const assistantEmailChanged = oldAssistant && oldAssistant.email !== labData.assistantEmail;
+    const inchargeEmailChanged = oldInchargeAcc && oldInchargeAcc.email !== newInchargeEmail;
+    const assistantEmailChanged = oldAssistantAcc && oldAssistantAcc.email !== newAssistantEmail;
 
     // ---------------------------
     // UPDATE labincharge
@@ -275,9 +286,9 @@ static async update(id, labData) {
           google_id = ${inchargeEmailChanged ? "NULL" : "google_id"}
       WHERE staff_id = ?
     `, [
-      labData.inchargeName,
-      labData.inchargeEmail,
-      labData.inchargePhone,
+      newInchargeName,
+      newInchargeEmail,
+      newInchargePhone,
       staffId
     ]);
 
@@ -290,9 +301,9 @@ static async update(id, labData) {
           google_id = ${assistantEmailChanged ? "NULL" : "google_id"}
       WHERE staff_id = ?
     `, [
-      labData.assistantName,
-      labData.assistantEmail,
-      labData.assistantPhone,
+      newAssistantName,
+      newAssistantEmail,
+      newAssistantPhone,
       staffId
     ]);
 
@@ -306,6 +317,7 @@ static async update(id, labData) {
     conn.release();
   }
 }
+
 
 
   static async delete(id) {
